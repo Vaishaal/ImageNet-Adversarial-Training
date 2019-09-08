@@ -93,6 +93,30 @@ def get_val_dataflow(
     # do not fork() under MPI
     return ds
 
+def get_simple_val_dataflow(
+        src, batch_size=32, augmentors=None, parallel=None):
+    if augmentors is None:
+        augmentors = fbresnet_augmentor(False)
+    assert isinstance(augmentors, list)
+    if parallel is None:
+        parallel = min(40, multiprocessing.cpu_count())
+
+    aug = imgaug.AugmentorList(augmentors)
+
+    def mapf(dp):
+        im, cls = dp
+        im_new = im * 255
+        im_new = im_new[:, :, ::-1]
+        im_new = im_new.astype('uint8')
+        im_new = aug.augment(im_new)
+        return im_new, cls
+
+    ds = MultiThreadMapData(src, parallel, mapf,
+                            buffer_size=min(2000, src.size()), strict=True)
+    ds = BatchData(ds, batch_size, remainder=True)
+    # do not fork() under MPI
+    return ds
+
 
 def eval_on_ILSVRC12(model, sessinit, dataflow):
     pred_config = PredictConfig(
@@ -197,6 +221,7 @@ class ImageNetModel(ModelDesc):
         return tf.train.MomentumOptimizer(lr, 0.9, use_nesterov=True)
 
     def image_preprocess(self, image):
+        assert False
         with tf.name_scope('image_preprocess'):
             if image.dtype.base_dtype != tf.float32:
                 image = tf.cast(image, tf.float32)
