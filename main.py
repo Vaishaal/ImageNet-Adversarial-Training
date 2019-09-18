@@ -238,8 +238,8 @@ if __name__ == '__main__':
         logger.info("Running inference on {} images in {}".format(len(files), args.eval_directory))
         results = []
         for logits, in predictor.get_result():
-            predictions = list(np.argmax(logits, axis=1))
-            results.extend(predictions)
+            for row in logits:
+                results.append(",".join([str(x) for x in row]))
         assert len(results) == len(files)
         with open(args.prediction_file, "w") as f:
             for filename, label in zip(files, results):
