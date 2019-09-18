@@ -47,7 +47,7 @@ class PGDAttacker():
     This requires CUDA>=9.2 and TF>=1.12.
     """
 
-    def __init__(self, num_iter, epsilon, step_size, prob_start_from_clean=0.0):
+    def __init__(self, num_iter, epsilon, step_size, prob_start_from_clean=0.0, cw_loss=True, targetted=False):
         """
         Args:
             num_iter (int):
@@ -62,6 +62,8 @@ class PGDAttacker():
         We set its step size α = 1, except for 10-iteration attacks where α is set to ε/10=1.6
         """
         self.num_iter = num_iter
+        self.cw_loss = cw_loss
+        self.targetted = targetted 
         # rescale the attack epsilon and attack step size
         self.epsilon = epsilon * IMAGE_SCALE
         self.step_size = step_size * IMAGE_SCALE
@@ -108,8 +110,23 @@ class PGDAttacker():
                     logits = tf.cast(logits, tf.float32)
             # Note we don't add any summaries here when creating losses, because
             # summaries don't work in conditionals.
-            losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                logits=logits, labels=target_label)  # we want to minimize it in targeted attack
+            if self.targetted:
+                if self.cw_loss: assert False # not implemented for targetted
+                losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    logits=logits, labels=target_label)  # we want to minimize it in targeted attack
+            else:
+                print("USING CW LOSS...")
+                if not self.cw_loss: assert False # not implemented for targetted
+                label_mask = tf.one_hot(tf.math.argmax(logits, axis=1),
+                              1000,
+                              on_value=1.0,
+                              off_value=0.0,
+                              dtype=tf.float32)
+                correct_logit = tf.reduce_sum(label_mask * logits, axis=1)
+                wrong_logit = tf.reduce_max((1-label_mask) * logits - 1e4*label_mask, axis=1)
+                losses = -tf.nn.relu(correct_logit - wrong_logit + 50)
+
+
             if not self.USE_FP16:
                 g, = tf.gradients(losses, adv)
             else:
