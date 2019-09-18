@@ -47,7 +47,7 @@ class PGDAttacker():
     This requires CUDA>=9.2 and TF>=1.12.
     """
 
-    def __init__(self, num_iter, epsilon, step_size, prob_start_from_clean=0.0, cw_loss=True, targetted=False):
+    def __init__(self, num_iter, epsilon, step_size, prob_start_from_clean=0.0, targetted=False, l2=True):
         """
         Args:
             num_iter (int):
@@ -62,12 +62,12 @@ class PGDAttacker():
         We set its step size α = 1, except for 10-iteration attacks where α is set to ε/10=1.6
         """
         self.num_iter = num_iter
-        self.cw_loss = cw_loss
         self.targetted = targetted 
         # rescale the attack epsilon and attack step size
         self.epsilon = epsilon * IMAGE_SCALE
         self.step_size = step_size * IMAGE_SCALE
         self.prob_start_from_clean = prob_start_from_clean
+        self.l2 = l2
 
     def _create_random_target(self, label):
         """
@@ -81,7 +81,7 @@ class PGDAttacker():
 
     def attack(self, image_clean, label, model_func):
         target_label = self._create_random_target(label)
-
+        print("MODELLLLL: ", model_func)
         def fp16_getter(getter, *args, **kwargs):
             name = args[0] if len(args) else kwargs['name']
             if not name.endswith('/W') and not name.endswith('/b'):
@@ -111,22 +111,12 @@ class PGDAttacker():
             # Note we don't add any summaries here when creating losses, because
             # summaries don't work in conditionals.
             if self.targetted:
-                if self.cw_loss: assert False # not implemented for targetted
                 losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
                     logits=logits, labels=target_label)  # we want to minimize it in targeted attack
             else:
-                print("USING CW LOSS...")
-                if not self.cw_loss: assert False # not implemented for targetted
-                label_mask = tf.one_hot(tf.math.argmax(logits, axis=1),
-                              1000,
-                              on_value=1.0,
-                              off_value=0.0,
-                              dtype=tf.float32)
-                correct_logit = tf.reduce_sum(label_mask * logits, axis=1)
-                wrong_logit = tf.reduce_max((1-label_mask) * logits - 1e4*label_mask, axis=1)
-                losses = -tf.nn.relu(correct_logit - wrong_logit + 50)
-
-
+                target_label = tf.argmax(logits, axis=1)
+                losses = -tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    logits=logits, labels=target_label)
             if not self.USE_FP16:
                 g, = tf.gradients(losses, adv)
             else:
@@ -144,7 +134,17 @@ class PGDAttacker():
             (implemented at https://github.com/MadryLab/cifar10_challenge )
             as the white-box attacker for adversarial training
             """
-            adv = tf.clip_by_value(adv - tf.sign(g) * self.step_size, lower_bound, upper_bound)
+            if not self.l2:
+                #linf
+                adv = tf.clip_by_value(adv - tf.sign(g) * self.step_size, lower_bound, upper_bound)
+            else:
+                #l2
+                mask = tf.norm(tf.reshape(g, (-1, g.shape[1]*g.shape[2]*g.shape[3])), axis=1) < self.epsilon
+                idxs = tf.where(mask)
+                mask = tf.broadcast_to(tf.dtypes.cast(mask, tf.float32), (1,g.shape[1], g.shape[2], g.shape[3]))
+                normalized = self.epsilon*tf.math.l2_normalize(g, axis=[1,2,3])
+                g = (1.0 - mask)*g + mask*normalized
+                adv = adv - g
             return adv
 
         """
