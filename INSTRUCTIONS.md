@@ -2,7 +2,7 @@
 ## Dependencies:
 
 + TensorFlow ≥ 1.6 with GPU support
-+ Tensorpack ≥ 0.9.1
++ Tensorpack ≥ 0.9.8
 + OpenCV ≥ 3
 + horovod ≥ 0.15 with NCCL support
   + horovod has many [installation options](https://github.com/uber/horovod/blob/master/docs/gpus.md) to optimize its multi-machine/multi-GPU performance.
@@ -60,6 +60,7 @@
 </table>
 
 
+Click the first column to download the model and obtain the flags to be used with the script.
 
 Note:
 
