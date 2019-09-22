@@ -108,6 +108,7 @@ def get_simple_val_dataflow(
         im_new = im * 255
         im_new = im_new[:, :, ::-1]
         im_new = im_new.astype('uint8')
+        return im_new, cls
         im_new = aug.augment(im_new)
         return im_new, cls
 
@@ -123,18 +124,19 @@ def eval_on_ILSVRC12(model, sessinit, dataflow):
         model=model,
         session_init=sessinit,
         input_names=['input', 'label'],
-        output_names=['wrong-top1', 'wrong-top5', 'attack_success']
+        output_names=['wrong-top1', 'wrong-top5', 'attack_success', 'linear/output']
     )
     pred = SimpleDatasetPredictor(pred_config, dataflow)
     acc1, acc5, succ = RatioCounter(), RatioCounter(), RatioCounter()
-    for top1, top5, num_succ in pred.get_result():
+    for top1, top5, num_succ, logits in pred.get_result():
         batch_size = top1.shape[0]
         acc1.feed(top1.sum(), batch_size)
         acc5.feed(top5.sum(), batch_size)
         succ.feed(num_succ.sum(), batch_size)
-        # Uncomment to monitor the metrics during evaluation
-        # print("Top1 Error: {}".format(acc1.ratio))
-        # print("Attack Success Rate: {}".format(succ.ratio))
+        print(logits.shape)
+        #Uncomment to monitor the metrics during evaluation
+        print("Top1 Error: {}".format(acc1.ratio))
+        #print("Attack Success Rate: {}".format(succ.ratio))
     print("Top1 Error: {}".format(acc1.ratio))
     print("Attack Success Rate: {}".format(succ.ratio))
     print("Top5 Error: {}".format(acc5.ratio))
@@ -178,9 +180,11 @@ class ImageNetModel(ModelDesc):
 
     def inputs(self):
         return [tf.placeholder(self.image_dtype, [None, self.image_shape, self.image_shape, 3], 'input'),
-                tf.placeholder(tf.int32, [None], 'label')]
+                tf.placeholder(tf.int32, [None], 'label'),
+                tf.placeholder(tf.int32, [None], 'indices')]
 
-    def build_graph(self, image, label):
+
+    def build_graph(self, image, label, indices):
         image = self.image_preprocess(image)
         assert self.data_format == 'NCHW'
         image = tf.transpose(image, [0, 3, 1, 2])

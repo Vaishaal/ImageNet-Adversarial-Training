@@ -111,6 +111,7 @@ class PGDAttacker():
             # Note we don't add any summaries here when creating losses, because
             # summaries don't work in conditionals.
             if self.targetted:
+                target_label = self._create_random_target(label)
                 losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
                     logits=logits, labels=target_label)  # we want to minimize it in targeted attack
             else:
@@ -192,7 +193,7 @@ class AdvImageNetModel(ImageNetModel):
     def set_attacker(self, attacker):
         self.attacker = attacker
 
-    def build_graph(self, image, label):
+    def build_graph(self, image, label, indices):
         """
         The default tower function.
         """
